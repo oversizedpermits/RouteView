@@ -607,14 +607,6 @@ define( function( m ) {
 				index_waypoint = new_dir.request.Th;
             else if (new_dir.request.Xh != undefined)
 				index_waypoint = new_dir.request.Xh;
-            else if (new_dir.request.Qp != undefined)
-				index_waypoint = new_dir.request.Qp;
-            else if (new_dir.request.bk != undefined)
-				index_waypoint = new_dir.request.bk;
-            else if (new_dir.request.Zp != undefined)
-				index_waypoint = new_dir.request.Zp;
-            else if (new_dir.request.sq != undefined)
-				index_waypoint = new_dir.request.sq;
 			console.log("index_waypoint="+index_waypoint);
             if ( index_waypoint == undefined ) {
 				console.log( "!!!!UNDEFINED >>>>>>" );
@@ -1656,7 +1648,7 @@ console.log(curr_dist_in_route + " - " + step);
                    	mapTypeControl: false,
                    	streetViewControl: false,
                    	gestureHandling: 'greedy',
-                   	mapTypeId: 'roadmap'
+                   	mapTypeId: 'satellite'
                 };
                 map = new google.maps.Map( document.getElementById('id_map_canvas'), map_options );
 
@@ -2443,7 +2435,7 @@ console.log("@@@");
 		else {
 			document.getElementById("id_interval").innerHTML = interval;
 			document.getElementById("id_interval_msec").innerHTML = " Ymilliseconds";
-			dijit.byId('id_btn_pause').set( 'label', "Pase" );
+			dijit.byId('id_btn_pause').set( 'label', "Pause" );
 		}
 		localStorage.setItem( "interval", interval );
     }
