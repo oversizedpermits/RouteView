@@ -1,3 +1,23 @@
+# RouteView — Oversized Permits Australia
+
+RouteView was originally created by [Olivier Singla](https://github.com/osingla/RouteView) to explore routes using Google Maps and Street View. We sincerely appreciate Olivier's work and his decision to share this useful tool with the community.
+
+The original repository appears no longer actively maintained. We have created this independent fork to preserve its usefulness, fix identified bugs and expand its features for route planning at **Oversized Permits Australia**.
+
+Our improvements include support for up to **100 intermediate waypoints**, plus start and destination, with continuous Street View playback. Future development will focus on saving route assessments and marking areas of concern for human review.
+
+Thanks also to [**Enkah**](https://github.com/Enkah), whose local fixes and investigation of existing issues helped keep our installation working.
+
+RouteView is a planning and visual review aid. Routes and potential hazards still require appropriate human verification.
+
+The original copyright notices and [BSD-3-Clause licence](LICENSE) are retained.
+
+## Installation and original project documentation
+
+The documentation below is retained from the original project, with the download link updated to this fork. References to the original author's hosted sites and contact details are historical. See [100-WAYPOINTS.md](100-WAYPOINTS.md) for this fork's expanded waypoint support and limitations.
+
+---
+
 # RouteView (StreeViewPlayer)
 ### (C) Olivier Singla 2015-2022
 
@@ -17,7 +37,7 @@ There is no server hosting this application, so there is some setup you will nee
 
 - First download the application.
   Use the link below with your web browser (Chrome)
-  https://github.com/osingla/RouteView/archive/refs/heads/master.zip
+  https://github.com/oversizedpermits/RouteView/archive/refs/heads/master.zip
 - Save this file somewhere on your PC/laptop
 - Un-compress this archive
   Right-click on the zip file, and select "Extrac All"
