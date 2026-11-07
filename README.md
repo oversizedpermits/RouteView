@@ -4,13 +4,23 @@ RouteView was originally created by [Olivier Singla](https://github.com/osingla/
 
 The original repository appears no longer actively maintained. We have created this independent fork to preserve its usefulness, fix identified bugs and expand its features for route planning at **Oversized Permits Australia**.
 
-Our improvements include support for up to **100 intermediate waypoints**, plus start and destination, with continuous Street View playback. Future development will focus on saving route assessments and marking areas of concern for human review.
+Our improvements include support for up to **100 intermediate waypoints**, plus start and destination, with continuous Street View playback. Route definitions can be saved as local files and shared with other reviewers.
 
 Thanks also to [**Enkah**](https://github.com/Enkah), whose local fixes and investigation of existing issues helped keep our installation working.
 
 RouteView is a planning and visual review aid. Routes and potential hazards still require appropriate human verification.
 
 The original copyright notices and [BSD-3-Clause licence](LICENSE) are retained.
+
+## Save and reopen a route
+
+1. In the route panel, enter a **Route name** and select **Save route**. Keep the downloaded `.routeview.json` file in the job folder and include it in your normal job backups.
+2. Select **Load route** and choose the file. Confirm replacement if you have unsaved changes.
+3. When the route has recalculated, check the displayed path before continuing the review. Google can choose different roads from the original calculation, and reopening a file uses Maps API requests.
+
+Version 1 files are UTF-8 JSON with `format: "routeview"` and `version: 1`. They store the route `name`, ordered `locations` (start, up to 100 intermediate waypoints, and destination), boolean `avoidHighways` and `avoidTolls`, and numeric `stepMeters` and `intervalMs`. Empty intermediate rows are skipped. The file limit is 1 MiB. Files contain route inputs and settings only. Keep any required diversions as explicit waypoints. Existing RouteView URL links can still be opened directly.
+
+Run the route file and batch routing tests with `node --test routeview-file.test.cjs routeview-batch.test.cjs`.
 
 ## Installation and original project documentation
 

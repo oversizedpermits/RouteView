@@ -4,7 +4,7 @@
 /* *** http://StreetViewPlayer.org                                         *** */ 
 /* *************************************************************************** */
 
-define(["./RouteViewBatch.js"], function( RouteViewBatch ) {
+define(["./RouteViewBatch.js", "./RouteViewFile.js"], function( RouteViewBatch, RouteViewFile ) {
 
 	var MAX_NB_WAYPOINTS = 100;
     var route_generation = 0;
@@ -15,6 +15,10 @@ define(["./RouteViewBatch.js"], function( RouteViewBatch ) {
     var route_location_rows = [];
     var route_leg_for_row = {};
     var setting_directions = false;
+    var route_file_snapshot;
+    var route_file_selection = 0;
+    var route_replacement = 0;
+    var places = [];
 
     function clear_batch_display() {
         extra_renderers.forEach(function(renderer) { renderer.setMap(null); });
@@ -87,7 +91,6 @@ define(["./RouteViewBatch.js"], function( RouteViewBatch ) {
     var legs_bounds = [];
 	var distances = [];
 	var cb_route_from_or_to_changed_handle;
-	var places;
 	var got_location;
    	var streetViewLayer;
    	var street_view_check;
@@ -460,12 +463,121 @@ define(["./RouteViewBatch.js"], function( RouteViewBatch ) {
       return (Math.sqrt( (x*x) + (y*y) + (z*z) )/1000);  
     }
 
+    function read_route_definition() {
+        var locations = [];
+        var last = find_first_hidden() - 1;
+        for (var index = 0; index <= last; index++) {
+            var value = dijit.byId('id_wp_' + index).get('value').trim();
+            if (value || index === 0 || index === last) locations.push(value);
+        }
+        return {
+            name: document.getElementById('id_route_name').value.trim(),
+            locations: locations,
+            avoidHighways: dijit.byId('id_check_no_hwy').get('checked'),
+            avoidTolls: dijit.byId('id_check_no_toll').get('checked'),
+            stepMeters: dijit.byId('id_input_meters').get('value'),
+            intervalMs: dijit.byId('id_input_interval').get('value')
+        };
+    }
+
+    function save_route_file() {
+        var route = read_route_definition();
+        try {
+            var content = RouteViewFile.serialize(route);
+            var filename = route.name.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'route';
+            download_file(content, 'RouteView-' + filename + '.routeview.json', 'application/json');
+            route_file_snapshot = JSON.stringify(route);
+            is_dirty = false;
+        } catch (error) {
+            show_error(error.message);
+        }
+    }
+
+    function set_route_playback_setting(id, value) {
+        var slider = dijit.byId(id);
+        var intermediate = slider.get('intermediateChanges');
+        slider.set('intermediateChanges', false);
+        slider.set('value', value, false);
+        slider.set('intermediateChanges', intermediate);
+    }
+
+    function apply_route_file(route) {
+        ++route_replacement;
+        cb_route_from_or_to_changed_handle.forEach(function(handle) { clearTimeout(handle); });
+        cb_route_from_or_to_changed_handle = [];
+        clearTimeout(cb_move_to_dist);
+        cb_move_to_dist = undefined;
+        if (!dijit.byId('id_btn_stop').get('disabled')) do_stop();
+
+        places = [];
+        for (var index = 0; index < MAX_NB_WAYPOINTS + 2; index++) {
+            var visible = index < route.locations.length;
+            var id = 'id_wp_' + index;
+            dijit.byId(id).set('value', visible ? route.locations[index] : '');
+            document.getElementById(id).style.color = '';
+            document.getElementById('id_tr_' + index).style.display = visible ? '' : 'none';
+            dijit.byId('gps_loc_wp_' + index).set('label', '');
+            if (index) {
+                document.getElementById('id_drive_tr_' + index).style.display = visible ? '' : 'none';
+            }
+        }
+        document.getElementById('id_route_name').value = route.name;
+        dijit.byId('id_check_no_hwy').set('checked', route.avoidHighways);
+        dijit.byId('id_check_no_toll').set('checked', route.avoidTolls);
+        document.getElementById('id_label_check_no_hwy').textContent = route.avoidHighways ? 'No Highway' : 'Highway';
+        document.getElementById('id_label_check_no_toll').textContent = route.avoidTolls ? 'No Toll' : 'Toll';
+        set_route_playback_setting('id_input_meters', route.stepMeters);
+        set_route_playback_setting('id_input_interval', route.intervalMs);
+        cb_step_changed(false);
+        cb_interval_changed(false);
+
+        route_file_snapshot = JSON.stringify(read_route_definition());
+        is_dirty = false;
+        do_route(true);
+    }
+
+    function load_route_file(event) {
+        var input = event.target;
+        var file = input.files[0];
+        input.value = '';
+        if (!file) return;
+        var selection = ++route_file_selection;
+        if (file.size > RouteViewFile.maxBytes) {
+            show_error('The route file exceeds 1 MiB.');
+            return;
+        }
+
+        file.text().then(function(text) {
+            if (selection !== route_file_selection) return;
+            var route;
+            try {
+                route = RouteViewFile.parse(text);
+            } catch (error) {
+                show_error(error.message);
+                return;
+            }
+            var changed = JSON.stringify(read_route_definition()) !== route_file_snapshot;
+            if ((changed || is_dirty) && !window.confirm('Replace the current route and discard unsaved changes?')) return;
+            apply_route_file(route);
+        }, function() {
+            if (selection === route_file_selection) show_error('Could not read the route file.');
+        });
+    }
+
+    function set_route_export_buttons(enabled) {
+        ['id_btn_save_gpx', 'id_btn_create_gmaps_url', 'id_btn_create_long_url'].forEach(function(id) {
+            dijit.byId(id).set('disabled', !enabled);
+        });
+    }
+
     function do_route( load_step_interv ) {
         var generation = ++route_generation;
         route_ready = false;
         route_responses = [];
         route_leg_for_row = {};
         clear_batch_display();
+        set_route_export_buttons(false);
+        document.getElementById('id_route_info').textContent = 'Calculating route…';
 
 	    dijit.byId("id_pane_standby").show();
 
@@ -540,11 +652,7 @@ define(["./RouteViewBatch.js"], function( RouteViewBatch ) {
     	if ( !initial_info_use_icon ) {
 			do_show_message( false, "Information", 
 				"<div align='center'>" +
-				"  You can play the route between<br><br>" +
-				start_location + "<br>" +
-				"and<br>" +
-				end_location + "<br><br>" +
-				"  by using the icon<br><br>" +
+				"Use the play icon to review the route in Street View.<br><br>" +
 				"  <img src='icons/btn-drive.png' style='width:16px;height:16px;'>" +
 				"</div>" );
 			localStorage.setItem( "initial_info_use_icon", "true" );
@@ -684,6 +792,7 @@ define(["./RouteViewBatch.js"], function( RouteViewBatch ) {
                 service.getDetails({
 	              	placeId: place_id
                 }, function ( place, status ) {
+                    if (generation !== route_generation) return;
                 	if ( status == google.maps.places.PlacesServiceStatus.OK ) {
 						console.log("==> " + old_nb_waypoints + "," + new_nb_waypoints + "(" + index_waypoint + ") >> " + place.formatted_address);
                 	    if (new_nb_waypoints == old_nb_waypoints) {
@@ -726,10 +835,6 @@ define(["./RouteViewBatch.js"], function( RouteViewBatch ) {
         update_btns_remove_up_down( );
     
         map.setOptions({draggableCursor: 'crosshair'});
-
-		dijit.byId('id_btn_save_gpx').set( 'disabled', false );
-		dijit.byId('id_btn_create_gmaps_url').set( 'disabled', false );
-		dijit.byId('id_btn_create_long_url').set( 'disabled', false );
 
         directions_service_request = {
             origin: start_location,
@@ -821,7 +926,16 @@ define(["./RouteViewBatch.js"], function( RouteViewBatch ) {
 				show_route_distance_duration(legs[i].distance.value, legs[i].duration.value, route_location_rows[i+1]);
             }
             
+            route_location_rows.forEach(function(row, index) {
+                if (places[row] && places[row].geometry) return;
+                var leg = legs[Math.max(index - 1, 0)];
+                var location = index ? leg.end_location : leg.start_location;
+                var address = index ? leg.end_address : leg.start_address;
+                places[row] = {name: address, geometry: {location: location}};
+            });
             route_ready = true;
+            update_btns_remove_up_down();
+            set_route_export_buttons(true);
             show_route_distance_duration(dist_meters, duration_secs, undefined, summary);
             if (route_responses.length > 1) {
                 document.getElementById('id_route_info').innerHTML +=
@@ -1387,10 +1501,12 @@ console.log(curr_dist_in_route + " - " + step);
 	}
 
 	function update_place(where, gps) {
+        var replacement = route_replacement;
 		console.log(where);
 		console.log(gps);
 		var geocoder = new google.maps.Geocoder();
     	geocoder.geocode( where, function( results, status ) {
+            if (replacement !== route_replacement) return;
 			api_counts[api_count.GEOCODING]++;
     	    if (status === google.maps.GeocoderStatus.OK) {
     	    	console.log( results[0] );
@@ -1404,6 +1520,7 @@ console.log(curr_dist_in_route + " - " + step);
 							placeId: results[0].place_id
 						}, function ( place, status ) {
 							console.log( " --> " + waypoint_index );
+                            if (replacement !== route_replacement) return;
 							if ( status == google.maps.places.PlacesServiceStatus.OK ) {
 								places[waypoint_index] = place;
 								var new_nb_waypoints = waypoint_index;
@@ -1435,6 +1552,7 @@ console.log(curr_dist_in_route + " - " + step);
 	}
 
 	function decode_url_params() {
+        var replacement = route_replacement;
 	
 		var query = location.search.substr(1);
 	  	var result = [];
@@ -1513,8 +1631,10 @@ console.log(curr_dist_in_route + " - " + step);
 			for ( var waypoint_index = 0; waypoint_index < result.length; waypoint_index++ ) {
 				
 				function look_for_address( place_name, waypoint_index) {
+                    if (replacement !== route_replacement) return;
 					var geocoder = new google.maps.Geocoder();
 					geocoder.geocode( { 'address': place_name}, function(results, status) {
+                        if (replacement !== route_replacement) return;
 						api_counts[api_count.GEOCODING]++;
 						if ( status == google.maps.GeocoderStatus.OK ) {
 //							console.log( results);
@@ -1522,6 +1642,7 @@ console.log(curr_dist_in_route + " - " + step);
 							service.getDetails({
 								placeId: results[0].place_id
 							}, function ( place, status ) {
+                                if (replacement !== route_replacement) return;
 								if ( status == google.maps.places.PlacesServiceStatus.OK ) {
 									console.log( done_nb_waypoints + " / " + total_nb_waypoints + " , " + waypoint_index + " --> " + place_name );
 									is_dirty = true;
@@ -1540,6 +1661,7 @@ console.log(curr_dist_in_route + " - " + step);
 											curr_leg = play_waypoint;
 											(function ( play_waypoint ) {
 												function play_route_at_startup() {
+                                                    if (replacement !== route_replacement) return;
 													if ( !route_ready || (polylines == undefined) || (polylines[play_waypoint] == undefined))
 														setTimeout( function() { play_route_at_startup(); }, 250 );
 													else
@@ -2115,8 +2237,10 @@ console.log(curr_dist_in_route + " - " + step);
 //	               		console.log( place );
 						if ( place.geometry == undefined ) {
 							function look_for_address( place_name, waypoint_index) {
+                                var replacement = route_replacement;
 								var geocoder = new google.maps.Geocoder();
 								geocoder.geocode( { 'address': place_name}, function(results, status) {
+                                    if (replacement !== route_replacement) return;
 									api_counts[api_count.GEOCODING]++;
 									if ( status == google.maps.GeocoderStatus.OK ) {
 //										console.log( results);
@@ -2124,6 +2248,7 @@ console.log(curr_dist_in_route + " - " + step);
 										service.getDetails({
 											placeId: results[0].place_id
 										}, function ( place, status ) {
+                                            if (replacement !== route_replacement) return;
 											console.log( " --> " + waypoint_index );
 											if ( status == google.maps.places.PlacesServiceStatus.OK ) {
 												places[waypoint_index] = place;
@@ -2160,7 +2285,8 @@ console.log(curr_dist_in_route + " - " + step);
 
    				got_location = false;
 
-   				var decoded_flags = decode_url_params();
+                   route_file_snapshot = JSON.stringify(read_route_definition());
+				var decoded_flags = decode_url_params();
 				console.log("decoded_flags= " + decoded_flags );
 
 				if ( !decoded_flags ) {
@@ -2168,8 +2294,10 @@ console.log(curr_dist_in_route + " - " + step);
 					if (is_addr_for_orig) {
 						dijit.byId('id_wp_0').set('value', dijit.byId('id_addr_for_orig').get( 'value'));
 
+                        var replacement = route_replacement;
 						var geocoder = new google.maps.Geocoder();
 						geocoder.geocode( { 'address': dijit.byId('id_addr_for_orig').get( 'value')}, function(results, status) {
+                            if (replacement !== route_replacement) return;
 							api_counts[api_count.GEOCODING]++;
 							if ( status == google.maps.GeocoderStatus.OK ) {
 //								console.log( results);
@@ -2177,6 +2305,7 @@ console.log(curr_dist_in_route + " - " + step);
 								service.getDetails({
 									placeId: results[0].place_id
 								}, function ( place, status ) {
+                                    if (replacement !== route_replacement) return;
 									if ( status == google.maps.places.PlacesServiceStatus.OK ) {
 										places[0] = place;
 									}
@@ -2349,11 +2478,15 @@ console.log("@@@");
 					dijit.byId('app_layout').resize();
        			});
 
-				var is_file_api = (window.File && window.FileReader && window.FileList && window.Blob) ? true : false;
-				console.log( "is_file_api = " + is_file_api );
-				if ( is_file_api ) {
-					document.getElementById( 'id_btn_load_file').addEventListener('change', load_file_select, false );
-				}
+                if (!decoded_flags) route_file_snapshot = JSON.stringify(read_route_definition());
+                var route_file = document.getElementById('id_route_file');
+                var save_route = document.getElementById('id_save_route_file');
+                var open_route = document.getElementById('id_open_route_file');
+                route_file.addEventListener('change', load_route_file);
+                save_route.addEventListener('click', save_route_file);
+                open_route.addEventListener('click', function() { route_file.click(); });
+                save_route.disabled = false;
+                open_route.disabled = false;
 
 				document.getElementById("id_panorama2").style.display = "None";
 				document.getElementById("id_panorama3").style.display = "None";
@@ -2489,28 +2622,28 @@ console.log("@@@");
 		}
     }
 
-    function cb_step_changed( ) {
+    function cb_step_changed(persist) {
     	step = dijit.byId('id_input_meters').get( 'value' );
     	console.log("step = " + step);
         document.getElementById("id_meters").innerHTML = step;
         document.getElementById("id_feet").innerHTML = Math.floor(step * 3.2808);
-    	localStorage.setItem( "step", step );
+        if (persist !== false) localStorage.setItem('step', step);
     }
 
-    function cb_interval_changed( ) {
+    function cb_interval_changed(persist) {
     	interval = dijit.byId('id_input_interval').get( 'value' );
     	console.log("interval = " + interval);
     	if (interval == 10000) {
-			document.getElementById("id_interval").innerHTML = "XStep by step";
-			document.getElementById("id_interval_msec").innerHTML = "X";
+			document.getElementById("id_interval").innerHTML = "Step by step";
+			document.getElementById("id_interval_msec").innerHTML = "";
 			dijit.byId('id_btn_pause').set( 'label', "Next" );
 		} 
 		else {
 			document.getElementById("id_interval").innerHTML = interval;
-			document.getElementById("id_interval_msec").innerHTML = " Ymilliseconds";
+			document.getElementById("id_interval_msec").innerHTML = " milliseconds";
 			dijit.byId('id_btn_pause').set( 'label', "Pause" );
 		}
-		localStorage.setItem( "interval", interval );
+        if (persist !== false) localStorage.setItem('interval', interval);
     }
 
 	function cb_route_thickness_changed( ) {
@@ -2586,7 +2719,7 @@ console.log("@@@");
         var no_hwy  = !dijit.byId('id_check_no_hwy').get( 'checked' );
 		console.log("-->" + no_hwy);
 		document.getElementById("id_label_check_no_hwy").innerHTML = (!no_hwy) ? "No Highway" : "Highway   ";
-    	if ( !dijit.byId("id_btn_drive_1").get("disabled") )
+        if (dijit.byId('id_wp_0').get('value') && dijit.byId('id_wp_' + (find_first_hidden() - 1)).get('value'))
     		do_route( true );
     }
 
@@ -2594,7 +2727,7 @@ console.log("@@@");
         var no_toll  = !dijit.byId('id_check_no_toll').get( 'checked' );
 		console.log("-->" + no_toll);
 		document.getElementById("id_label_check_no_toll").innerHTML = (!no_toll) ? "No Toll" : "Toll   ";
-    	if ( !dijit.byId("id_btn_drive_1").get("disabled") )
+        if (dijit.byId('id_wp_0').get('value') && dijit.byId('id_wp_' + (find_first_hidden() - 1)).get('value'))
     		do_route( true );
     }
 
@@ -2610,9 +2743,11 @@ console.log("@@@");
     function download_file( text, name, type ) {
         var a = document.createElement("a");
         var file = new Blob([text], {type: type});
-        a.href = URL.createObjectURL(file);
+        var url = URL.createObjectURL(file);
+        a.href = url;
         a.download = name;
         a.click();
+        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
     }
 
     function _do_create_long_url( ) {
@@ -2857,6 +2992,7 @@ console.log("@@@");
     	update_btns_remove_up_down( );
     	
         if (nok_route) {
+            set_route_export_buttons(false);
             dijit.byId('id_pane_standby').hide();
             clear_batch_display();
             if (directions_renderer) directions_renderer.setMap(null);
@@ -3197,10 +3333,7 @@ console.log("@@@");
 		
 		dijit.byId('id_btn_drive_whole_route').set( 'disabled', true );
 		for ( var n = 1; n < first_hidden; n++ ) {
-			var wp0 = dijit.byId('id_wp_'+(n-1)).get( 'value' );
-			var wp1 = dijit.byId('id_wp_'+n).get( 'value' );
-// 			dijit.byId('id_btn_drive_'+n).set( 'disabled', ((wp0 == '') || (wp1 == '')) ? true : false );
-	   		if ( (wp0 == '') || (wp1 == '') ) {
+            if (!route_ready || route_leg_for_row[n] === undefined) {
 		   		dijit.byId('id_btn_drive_'+n).set( 'disabled', true );
 				dijit.byId('id_tooltip_btn_drive_'+n).set( 'showDelay', 999999 );
 	   		}
@@ -3481,12 +3614,6 @@ console.log("@@@");
     	dlg.closeDropDown( false );
     }
     
-    function load_file_select( evt ) {
-		
-		var files = evt.target.files; 
-		console.log( files );
-	}
-
 	require(["dojo/store/Memory"], function( Memory ) {
 		_iso_countries = [
             {code: 'AL', id: 'Albania'},

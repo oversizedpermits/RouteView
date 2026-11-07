@@ -157,6 +157,14 @@
 											</div>
 										</span>
 				                    </legend>
+                                    <div style="margin: 0.4em">
+                                        <label for="id_route_name">Route name</label>
+                                        <input type="text" id="id_route_name" maxlength="120">
+                                        <button type="button" id="id_save_route_file" disabled>Save route</button>
+                                        <button type="button" id="id_open_route_file" disabled>Load route</button>
+                                        <input type="file" id="id_route_file" accept=".json,application/json" hidden>
+                                        <div>Loading recalculates the route with Google and uses Maps API requests.</div>
+                                    </div>
 				                    <table cellspacing="0" cellpadding="0" style="white-space: nowrap" >
 				                    	<tr >
 				                    		<td>
@@ -284,30 +292,6 @@
 													For instance, you could choose to display all McDonald's on the map.<br>
 													Or, you could also choose to display all Harley Davidson dealerships on the map.
 							                    </div>
-											</td>
-
-				                            <td align="center" valign="middle">
-				                        		<div data-dojo-type="dijit/form/DropDownButton" data-dojo-props='autoWidth:false' id="id_files_dlg" style="font-size: 85%; display:none" disabled>
-				                            		<span>Files</span>
-						                            <div data-dojo-type="dijit/TooltipDialog">
-														
-														<table style="width:100%">
-															<tr>
-																<td valign="middle" align="left">
-																	<input type="file" id="id_btn_load_file">
-																		Load a Ride
-																	</button>
-																</td>
-															</tr>
-															<tr>
-																<td valign="middle" align="left">
-													                    <a id="link" target="_blank" download="file.txt">Download</a>
-																</td>
-															</tr>
-														</table>
-														
-													</div>
-												</div>
 											</td>
 
 				                            <td align="center" valign="middle">

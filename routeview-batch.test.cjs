@@ -97,7 +97,8 @@ test('application builds all 101 playback legs and clears all displays on recalc
     source = source.slice(0, lastReturn) + `
         return {
             setup: function(results, rows) {
-                map = {}; route_responses = results; route_location_rows = rows;
+                map = {fitBounds() {}}; route_responses = results; route_location_rows = rows;
+                rows.slice(1).forEach(function(row, index) { route_leg_for_row[row] = index; });
                 directions_renderer = new google.maps.DirectionsRenderer();
                 streetViewLayer = {getMap: function() { return undefined; }};
             },
@@ -122,17 +123,20 @@ test('application builds all 101 playback legs and clears all displays on recalc
     Bounds.prototype.extend = function(p) { this.points.push(p); };
     let app;
     vm.runInNewContext(source, {define(deps, factory) { app = factory(batch); },
-        require() {}, console: {log() {}}, dijit: {byId: widget},
+        require(deps, callback) {
+            if (deps[0] === 'dojo/dom-style') callback({get() { return ''; }});
+        }, console: {log() {}}, dijit: {byId: widget},
         document: {getElementById: id => elements[id] ||= {innerHTML: ''}},
         google: {maps: {DirectionsStatus: {OK: 'OK'}, DirectionsRenderer: Renderer,
             Marker, Polyline, LatLngBounds: Bounds}}});
     const req = request(100);
     batch.calculate({route(r, cb) { cb(response(r), 'OK'); }}, req, {}, (result, status, responses) => {
         app.setup(responses, Array.from({length: 102}, (_, i) => i));
-        widget('id_btn_drive_1').disabled = true; // avoid viewport work in this mock
         app.complete(result, status);
         const state = app.state();
         assert.equal(state.ready, true); assert.equal(state.paths.length, 101);
+        assert.equal(widget('id_btn_drive_101').disabled, false);
+        assert.equal(widget('id_btn_drive_whole_route').disabled, false);
         assert.equal(state.extra.length, 3); assert.equal(state.markers.length, 102);
         assert.equal(state.markers[101].label, '102');
         assert.equal(state.paths[100].path.length, 2);
